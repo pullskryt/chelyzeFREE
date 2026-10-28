@@ -24,9 +24,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      # Ubuntu GitHub runners already include Android SDK command-line tools.
+      # android-actions/setup-android@v3 invokes obsolete `sdkmanager tools`
+      # and fails with "Failed to find package 'tools'".
       - name: Install Android SDK 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -39,7 +43,7 @@ jobs:
           mkdir -p unpacked "app/src/main/jniLibs/${{ matrix.abi }}"
           tar -xf stockfish.tar -C unpacked
           binary="$(find unpacked -type f -name '${{ matrix.engine }}' | head -n 1)"
-          test -n "$binary" || { echo "Stockfish binary not found in release archive"; exit 1; }
+          test -n "$binary" || { echo 'Stockfish binary not found in release archive'; exit 1; }
           echo '${{ matrix.sha256 }}  '"$binary" | sha256sum -c -
           cp "$binary" "app/src/main/jniLibs/${{ matrix.abi }}/libstockfish.so"
           chmod 755 "app/src/main/jniLibs/${{ matrix.abi }}/libstockfish.so"
