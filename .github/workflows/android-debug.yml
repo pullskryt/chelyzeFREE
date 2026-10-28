@@ -1,4 +1,6 @@
+
 name: Build Android debug APKs
+
 on:
   workflow_dispatch:
   push:
@@ -8,6 +10,7 @@ jobs:
   debug-apk:
     name: Debug APK / ${{ matrix.abi }}
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
@@ -15,41 +18,72 @@ jobs:
           - abi: arm64-v8a
             engine: stockfish-android-armv8
             sha256: cc3b3b74466b6d85cdc0f8cfdad4111c6a44bd0698f4eab96fea7b359a54d3d4
+
           - abi: armeabi-v7a
             engine: stockfish-android-armv7-neon
             sha256: 672fbd7533d15fc70dae82df52c1185236975d059a585aa65eda960f1a3266ea
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      # Ubuntu GitHub runners already include Android SDK command-line tools.
-      # android-actions/setup-android@v3 invokes obsolete `sdkmanager tools`
-      # and fails with "Failed to find package 'tools'".
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
       - name: Install Android SDK 35
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Download verified official Stockfish 18 Android engine
+
+      - name: Download Stockfish 18
         shell: bash
         run: |
           set -euo pipefail
+
           url="https://github.com/official-stockfish/Stockfish/releases/download/sf_18/${{ matrix.engine }}.tar"
+
           curl -fL --retry 3 "$url" -o stockfish.tar
-          mkdir -p unpacked "app/src/main/jniLibs/${{ matrix.abi }}"
+
+          mkdir -p unpacked
+          mkdir -p "app/src/main/jniLibs/${{ matrix.abi }}"
+
           tar -xf stockfish.tar -C unpacked
+
           binary="$(find unpacked -type f -name '${{ matrix.engine }}' | head -n 1)"
-          test -n "$binary" || { echo 'Stockfish binary not found in release archive'; exit 1; }
+
+          test -n "$binary" || {
+            echo "Stockfish binary not found"
+            exit 1
+          }
+
           echo '${{ matrix.sha256 }}  '"$binary" | sha256sum -c -
+
           cp "$binary" "app/src/main/jniLibs/${{ matrix.abi }}/libstockfish.so"
+
           chmod 755 "app/src/main/jniLibs/${{ matrix.abi }}/libstockfish.so"
-      - name: Test and build DEBUG only
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug -PtargetAbi=${{ matrix.abi }} --stacktrace
-      - uses: actions/upload-artifact@v4
+
+      - name: Test and build DEBUG APK
+        run: |
+          gradle --no-daemon \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            -PtargetAbi=${{ matrix.abi }} \
+            --stacktrace
+
+      - name: Upload DEBUG APK
+        uses: actions/upload-artifact@v4
         with:
           name: ChessPocket-${{ matrix.abi }}-debug
           path: app/build/outputs/apk/debug/app-debug.apk
